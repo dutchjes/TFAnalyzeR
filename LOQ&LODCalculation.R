@@ -17,18 +17,18 @@ neg.data <- c(1,4,5,7) ## which files in the av.data are for negative mode data?
 pos.data <- c(2,3,6,8) ## which files in the av.data are for positive mode data?
 
 ### load data
-TFdata <- read.csv(av.data[1], header = TRUE)
-TFdata <- subset(TFdata, TFdata$Peak.Label == "T1")
-
-targets <- unique(TFdata[which(TFdata$Type == "Target Compound"), 1])
-istds <- unique(TFdata[which(TFdata$Type == "Internal Standard"), 1])
-samples <- unique(TFdata[,"Sample.Name"])
-levels <- unique(TFdata[which(TFdata$Sample.Type == "Cal Std"),"Level"])
-
-target.rts <- c(unlist(subset(TFdata, TFdata$Type == "Target Compound" & 
-                      # TFdata$Sample.Type == "Cal Std" & 
-                       TFdata$Level == 500,
-                     select = c(Actual.RT))))
+# TFdata <- read.csv(av.data[1], header = TRUE)
+# TFdata <- subset(TFdata, TFdata$Peak.Label == "T1")
+# 
+# targets <- unique(TFdata[which(TFdata$Type == "Target Compound"), 1])
+# istds <- unique(TFdata[which(TFdata$Type == "Internal Standard"), 1])
+# samples <- unique(TFdata[,"Sample.Name"])
+# levels <- unique(TFdata[which(TFdata$Sample.Type == "Cal Std"),"Level"])
+# 
+# target.rts <- c(unlist(subset(TFdata, TFdata$Type == "Target Compound" & 
+#                       # TFdata$Sample.Type == "Cal Std" & 
+#                        TFdata$Level == 500,
+#                      select = c(Actual.RT))))
 
 
 
@@ -125,7 +125,7 @@ for(f in 1:length(av.data)){
   levels <- unique(TFdata[which(TFdata$Sample.Type == "Cal Std"),"Level"])
   
   target.rts <- as.numeric(as.character(unlist(subset(TFdata, TFdata$Type == "Target Compound" & 
-                                TFdata$Level == 500,
+                                TFdata$Level == max(TFdata$Level),
                                 select = c(Actual.RT)))))
   
   loqsummary <- LOQsummary(TFdata = TFdata, targets = targets, istds = istds, cal.levels = levels)
@@ -137,64 +137,52 @@ for(f in 1:length(av.data)){
 }
 
 
-library(lattice)
 
 #### Negative mode comparison
+
+library(lattice)
+
 
 neg <- neg.data
 n.neg <- length(best.loq[[neg[1]]]$data)
 neg.loq <- data.frame(loqs = unlist(lapply(best.loq[neg], function(l) l$data)),
-                      data = c(rep("NPBuechi_QE", n.neg),
-                               rep("NPBuechi_QEPlus", n.neg),
-                               rep("NPStds_QEPlus", n.neg),
-                               rep("TWBuechi_QE", n.neg)
-                      ),
+                      data = rep(data.name[neg.data], n.neg),
                       rts = unlist(lapply(best.loq[neg], function(s) s$rts))
-                      
 )
+
 boxplot(log10(loqs) ~ data, data = neg.loq)
 histogram(~loqs | data, data = neg.loq, nint = 100)
-xyplot(loqs ~ rts, data = neg.loq, groups = data)
+xyplot(loqs ~ rts, data = neg.loq, groups = data, auto.key = TRUE, pch = 16)
 
 n.neg <- length(best.lod[[neg[1]]])
 neg.lod <- data.frame(lods = unlist(lapply(best.lod[neg], function(l) l$data)),
-                      data = c(rep("NPBuechi_QE", n.neg),
-                               rep("NPBuechi_QEPlus", n.neg),
-                               rep("NPStds_QEPlus", n.neg),
-                               rep("TWBuechi_QE", n.neg)
-                      ),
+                      data = rep(data.name[neg.data], n.neg),
                       rts = unlist(lapply(best.lod[neg], function(s) s$rts))
-                      
 )
+
 boxplot(log10(lods) ~ data, data = neg.lod)
 histogram(~lods | data, data = neg.lod, nint = 100)
-xyplot(lods ~ rts, data = neg.lod, groups = data, ylim = c(-5,100), auto.key = TRUE)
+xyplot(lods ~ rts, data = neg.lod, groups = data, auto.key = TRUE, pch = 16)
 
 ##### Positive mode comparison
 
 pos <- pos.data
 n.pos <- unlist(lapply(best.loq[pos], function(x) length(x$data)))
 pos.loq <- data.frame(loqs = unlist(lapply(best.loq[pos], function(l) l$data)),
-                      data = c(rep("NPBuechi_QE", n.pos[1]),
-                               rep("NPBuechi_QEPlus", n.pos[2]),
-                               rep("NPStds_QEPlus", n.pos[3]),
-                               rep("TWBuechi_QE", n.pos[4])
-                      ),
+                      data = rep(data.name[pos.data], n.pos),
                       rts = unlist(lapply(best.loq[pos], function(s) s$rts))
 )
+
 boxplot(log10(loqs) ~ data, data = pos.loq)
 histogram(~loqs | data, data = pos.loq, nint = 100)
 xyplot(loqs ~ rts, data = pos.loq, groups = data, auto.key = TRUE, pch = 16)
 
 n.pos <- unlist(lapply(best.lod[pos], function(x) length(x$data)))
 pos.lod <- data.frame(lods = unlist(lapply(best.lod[pos], function(l) l$data)),
-                      data = c(rep("NPBuechi_QE", n.pos[1]),
-                               rep("NPBuechi_QEPlus", n.pos[2]),
-                               rep("NPStds_QEPlus", n.pos[3]),
-                               rep("TWBuechi_QE", n.pos[4])
-                      ),
+                      data = rep(data.name[pos.data], n.pos),
                       rts = unlist(lapply(best.lod[pos], function(s) s$rts))
 )
+
 boxplot(log10(lods) ~ data, data = pos.lod)
 histogram(~lods | data, data = pos.lod, nint = 100)
 xyplot(lods ~ rts, data = pos.lod, groups = data, auto.key = TRUE, pch = 16)
@@ -220,6 +208,9 @@ for(f in 1:length(av.data)){
   locs <- as.integer(sapply(names(sum.lod[[f]]), function(x) which(x == colnames(summary.lod))))
   summary.lod[f, locs] <- sum.lod[[f]]
 }
+
+
+### code for plotting
 
 rownames(summary.lod)
 
