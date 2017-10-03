@@ -1,6 +1,7 @@
 
 
 library(shiny)
+library(reshape)
 options(shiny.maxRequestSize = 100*1024^2)
 
 ui <- fluidPage(
@@ -51,34 +52,50 @@ server <- function(input, output, session){
     rv$istds <- unique(TFdata()[which(TFdata()$Type == "Internal Standard"), 1])
     updateSelectInput(session, "ISTD", choices = rv$istds)
     
-    rv$cal.levels <- unique(subset(TFdata(), TFdata()$Sample.Type == "Cal Std", select = c("Level")))
+    rv$cal.levels <- unique(TFdata()[which(TFdata()$Sample.Type == "Cal Std"), "Level"])
     updateSelectInput(session, "CalLevels", choices = rv$cal.levels)
     
   })
   
   
   observeEvent(c(input$TargetCompound, input$CalLevels),{
-    rv$target.area <- as.numeric(as.character(unlist(subset(TFdata(), 
+    rv$target.area <- #as.numeric(as.character(unlist(
+      subset(TFdata(), 
                                                             TFdata()[,1] == input$TargetCompound & 
                                                               TFdata()$Sample.Type == "Cal Std" & 
-                                                              TFdata()$Level %in% input$CalLevels, 
-                                                            select = c(Area)))))
+                                                              TFdata()$Level %in% input$CalLevels#, 
+                                                           # select = c(Area)
+             )
+    #)))
+    
+    rv$target.area <- as.data.frame(cast(rv$target.area, Level~.,
+                                         function(x) mean(na.omit(as.numeric(as.character(x)))),
+                                         value = "Area"))[,2]
+    
     rv$response.area <- rv$target.area/rv$istd.area
   })
   
   observeEvent(c(input$ISTD,input$CalLevels),{
-    rv$istd.area <- as.numeric(as.character(unlist(subset(TFdata(), 
+    rv$istd.area <- #as.numeric(as.character(unlist(
+      subset(TFdata(), 
                                                           TFdata()[,1] == input$ISTD &
                                                             TFdata()$Sample.Type == "Cal Std" &
-                                                            TFdata()$Level %in% input$CalLevels, 
-                                                          select = c(Area)))))
+                                                            TFdata()$Level %in% input$CalLevels#, 
+                                                         # select = c(Area)
+             )
+    #)))
+    
+    rv$istd.area <- as.data.frame(cast(rv$istd.area, Level~.,
+                                       function(x) mean(na.omit(as.numeric(as.character(x)))),
+                                       value = "Area"))[,2]
+    
     rv$response.area <- rv$target.area/rv$istd.area
   })
   
  observeEvent(c(input$CalModel, input$CalLevels),{
     if(input$CalModel == "X"){
       rv$weights <- as.numeric(as.character(input$CalLevels))
-    } 
+    }
     if(input$CalModel == "1/X"){
       rv$weights <- as.numeric(as.character(input$CalLevels))
       rv$weights <- 1/rv$weights
@@ -86,16 +103,17 @@ server <- function(input, output, session){
    if(input$CalModel == "1/X2"){
      rv$weights <- as.numeric(as.character(input$CalLevels))
      rv$weights <- 1/(rv$weights^2)
-     
+
    }
-   
+
   })
 
   
   
   output$CalibrationCurve <- renderPlot({
     
-    lm <- lm(rv$response.area ~ as.numeric(as.character(input$CalLevels)), weights = rv$weights)
+    lm <- lm(rv$response.area ~ as.numeric(as.character(input$CalLevels)), weights = rv$weights
+             )
     plot(x = input$CalLevels, rv$response.area, xlab = "Calibration Levels", ylab = "Response Area (Target/ISTD)")
     abline(lm)
     legend("topleft", legend = bquote("R"^2 ~ "=" ~ .(round(summary(lm)$r.squared, 2))))
