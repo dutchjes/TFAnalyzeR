@@ -140,7 +140,9 @@ predictConc <- function(TFdata, target, internal.standard, weighting, colname.co
 #' @param predicted.data use the output from 'predictConc' function
 #' @param sample.code text code for samples 
 #' @param recovery.code text code for recovery samples
-#' @param cal.standard text code for calibration standard to be used
+#' @param standard.conc which concentration to use for the standard. options are "theoretical" or "calculated"
+#' @param cal.standard text code for calibration standard to be used. use if standard.conc is set to "calculated" 
+#' @param spike.level enter spike concentration. use if standard.conc is set to "theoretical"
 #' @param colname.compound name of the column in predicted.data with compound names. If using the output of 'predictConc', then
 #' this will need to include '.x' or '.y' at the end
 #'
@@ -149,11 +151,14 @@ predictConc <- function(TFdata, target, internal.standard, weighting, colname.co
 #'
 #' @examples
 #' 
-recoveryCalc <- function(predicted.data, sample.code, recovery.code, cal.standard, colname.compound){
+recoveryCalc <- function(predicted.data, sample.code, recovery.code, standard.conc = c("theoretical", "calculated"),
+                         cal.standard, spike.level, colname.compound){
   
   recovery <- grep(pattern = recovery.code, x = predicted.data$Sample.Name.x)
   samples <- grep(pattern = sample.code, x = predicted.data$Sample.Name.x)
-  standard <- grep(pattern = cal.standard, x = predicted.data$Sample.Name.x)
+  if(standard.conc == "calculated"){
+    standard <- grep(pattern = cal.standard, x = predicted.data$Sample.Name.x)
+  }
 
   if("predictConc" %in% colnames(predicted.data) == FALSE){
     return("NA")
@@ -169,16 +174,25 @@ recoveryCalc <- function(predicted.data, sample.code, recovery.code, cal.standar
                                    function(x) mean(na.omit(as.numeric(as.character(x)))),
                                    value = 'predictConc'))
   
-  standard.mean <- as.data.frame(cast(data = predicted.data[standard,], 
-                                      formula = as.formula(paste("Sample.Name.x ~", colname.compound)), 
-                                      function(x) mean(na.omit(as.numeric(as.character(x)))),
-                                      value = 'predictConc'))
-  
-  relRec <- ((mean(spike.mean[,2], na.rm = TRUE) - mean(unspike.mean[,2],na.rm = TRUE))/mean(standard.mean[,2], na.rm = TRUE))*100
-  
-  return(round(relRec, 2))
+  if(standard.conc == "calculated"){
+    standard.mean <- as.data.frame(cast(data = predicted.data[standard,], 
+                                        formula = as.formula(paste("Sample.Name.x ~", colname.compound)), 
+                                        function(x) mean(na.omit(as.numeric(as.character(x)))),
+                                        value = 'predictConc'))
+
+    relRec <- ((mean(spike.mean[,2], na.rm = TRUE) - mean(unspike.mean[,2],na.rm = TRUE))/mean(standard.mean[,2], na.rm = TRUE))*100
+    
+    return(round(relRec, 2))
+  }
+
+  if(standard.conc == "theoretical"){
+    relRec <- ((mean(spike.mean[,2], na.rm = TRUE) - mean(unspike.mean[,2],na.rm = TRUE))/as.numeric(spike.level))*100
+    
+    return(round(relRec, 2))
+  }
   
   }
+  
 }
 
 
