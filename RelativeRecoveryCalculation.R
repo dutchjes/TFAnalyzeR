@@ -175,6 +175,9 @@ predictConc <- function(TFdata, target, internal.standard, weighting, colname.co
     return(TFdata)
   }else{
     data$predictConc <- as.numeric(predict(lm, newdata = data.frame(response.area = as.numeric(as.character(data$response.area)))))
+    #data <- data[, c("Filename", "Sample.Name.x", "Compound.x", "RT.x", "Compound.y", "RT.y", "response.area", 
+    #                 "predictConc" )] # I added this to make output smaller
+    data$R2 <- summary(lm)$r.squared
     return(data)
   }
 
@@ -190,54 +193,84 @@ predictConc <- function(TFdata, target, internal.standard, weighting, colname.co
 #' @param spike.level enter spike concentration. use if standard.conc is set to "theoretical"
 #' @param colname.compound name of the column in predicted.data with compound names. If using the output of 'predictConc', then
 #' this will need to include '.x' or '.y' at the end
-#'
+#' @param acc.factor if difference in concentration of spiked and unspiked samples is too small, rel. recovery should
+#' not be calculated (measurement errors are too large...)
+#' @param replicates were replicates measured for the spiked samples? Default is FALSE
+
 #' @return relative recovery, reported as a percentage
 #' @export
 #'
 #' @examples
 #' 
 recoveryCalc <- function(predicted.data, sample.code, recovery.code, standard.conc = c("theoretical", "calculated"),
-                         cal.standard, spike.level, colname.compound){
+                         cal.standard, spike.level, colname.compound, acc.factor = 1.7, replicates=FALSE){
   
-  recovery <- grep(pattern = recovery.code, x = predicted.data$Sample.Name.x)
-  samples <- grep(pattern = sample.code, x = predicted.data$Sample.Name.x)
+  
   if(standard.conc == "calculated"){
     standard <- grep(pattern = cal.standard, x = predicted.data$Sample.Name.x)
   }
-
+  
   if("predictConc" %in% colnames(predicted.data) == FALSE){
     return("NA")
   }else{
-
-  unspike.mean <- as.data.frame(cast(data = predicted.data[c(setdiff(samples, recovery)),], 
-                                     formula = as.formula(paste("Sample.Name.x ~", colname.compound)), 
-                                     function(x) mean(na.omit(as.numeric(as.character(x)))),
-                                     value = 'predictConc'))
-  
-  spike.mean <- as.data.frame(cast(data = predicted.data[c(intersect(samples, recovery)),], 
-                                   formula = as.formula(paste("Sample.Name.x ~", colname.compound)), 
-                                   function(x) mean(na.omit(as.numeric(as.character(x)))),
-                                   value = 'predictConc'))
-  
-  if(standard.conc == "calculated"){
-    standard.mean <- as.data.frame(cast(data = predicted.data[standard,], 
-                                        formula = as.formula(paste("Sample.Name.x ~", colname.compound)), 
-                                        function(x) mean(na.omit(as.numeric(as.character(x)))),
-                                        value = 'predictConc'))
-
-    relRec <- ((mean(spike.mean[,2], na.rm = TRUE) - mean(unspike.mean[,2],na.rm = TRUE))/mean(standard.mean[,2], na.rm = TRUE))*100
+    if(replicates == TRUE){
+      recovery <- grep(pattern = recovery.code, x = predicted.data$Sample.Name.x)
+      samples <- grep(pattern = sample.code, x = predicted.data$Sample.Name.x)
+      
+      unspike.mean <- as.data.frame(cast(data = predicted.data[c(setdiff(samples, recovery)),], 
+                                         formula = as.formula(paste("Sample.Name.x ~", colname.compound)), 
+                                         function(x) mean(na.omit(as.numeric(as.character(x)))),
+                                         value = 'predictConc'))
+      if(is.nan(unspike.mean[, 2])){   #Karin: I added this
+        unspike.mean[which(is.nan(unspike.mean[, 2])), 2] <- 0
+      }
+      
+      spike.mean <- as.data.frame(cast(data = predicted.data[c(intersect(samples, recovery)),], 
+                                       formula = as.formula(paste("Sample.Name.x ~", colname.compound)), 
+                                       function(x) mean(na.omit(as.numeric(as.character(x)))),
+                                       value = 'predictConc'))
+      if(is.nan(spike.mean[, 2])){   #Karin: I added this, otherwise the if condition with acc.factor fails if spike.mean = NaN
+        spike.mean[which(is.nan(spike.mean[, 2])), 2] <- 0
+      }
+    }else{ # Karin: I added this
+      unspike.mean <- predicted.data[which(predicted.data$Sample.Name.x==sample.code), c("predictConc")]
+      if(is.na(unspike.mean)){ unspike.mean <- 0}
+      unspike.mean <- as.data.frame(cbind(NA, as.numeric(unspike.mean)))       # NA is only a numeric placeholder
+      spike.mean <- predicted.data[which(predicted.data$Sample.Name.x==recovery.code[1]), c("predictConc")]
+      if(is.na(spike.mean)){ spike.mean <- 0}
+      spike.mean <- as.data.frame(cbind(NA, as.numeric(spike.mean)))
+    }
     
-    return(round(relRec, 2))
-  }
-
-  if(standard.conc == "theoretical"){
-    relRec <- ((mean(spike.mean[,2], na.rm = TRUE) - mean(unspike.mean[,2],na.rm = TRUE))/as.numeric(spike.level))*100
+    if(standard.conc == "calculated"){
+      if (unspike.mean > (spike.mean - unspike.mean)*acc.factor){  #Karin: I added this
+        relRec <- NA
+      } else {
+        standard.mean <- as.data.frame(cast(data = predicted.data[standard,], 
+                                            formula = as.formula(paste("Sample.Name.x ~", colname.compound)), 
+                                            function(x) mean(na.omit(as.numeric(as.character(x)))),
+                                            value = 'predictConc'))
+        
+        relRec <- ((mean(spike.mean[,2], na.rm = TRUE) - mean(unspike.mean[,2],na.rm = TRUE))/mean(standard.mean[,2], na.rm = TRUE))*100
+        if (relRec == 0 | is.nan(relRec)){
+          relRec <- NA
+        } 
+      }
+      return(round(relRec, 0)) # Karin: I set the rounding from 2 to 0
+    }
     
-    return(round(relRec, 2))
-  }
-  
+    if(standard.conc == "theoretical"){
+      if (unspike.mean[,2] > (spike.mean[,2] - unspike.mean[,2])*acc.factor){  #Karin: I added this, but this fails if spike.mean = NaN
+        relRec <- NA
+      } else {
+        relRec <- ((mean(spike.mean[,2], na.rm = TRUE) - mean(unspike.mean[,2],na.rm = TRUE))/as.numeric(spike.level))*100
+        if (relRec == 0 | is.nan(relRec)){
+          relRec <- NA
+        }   
+      }
+      return(round(relRec, 0))  # Karin: I set the rounding from 2 to 0
+    }
+    
   }
   
 }
-
 
