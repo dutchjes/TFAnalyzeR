@@ -114,6 +114,7 @@ responseArea <- function(TFdata, target, internal.standard, weighting, colname.c
 #' @param internal.standard name of internal standard compound, needs to be same as name in TFdata
 #' @param weighting type of weighting desired, options are X, 1/X, and 1/X^2
 #' @param colname.compound name of the column in TFdata with compound names
+#' @param Exclude.STD Exclude standards which were toggled in TraceFinder. Default is FALSE
 #'
 #' @return output is an lm object, based on the calibration levels and the response area, using the specified weights. if 
 #' no calilbration data is input, lm = "NA"
@@ -121,13 +122,16 @@ responseArea <- function(TFdata, target, internal.standard, weighting, colname.c
 #'
 #' @examples
 #' 
-calibrationCalc <- function(TFdata, target, internal.standard, weighting, colname.compound = "Compound"){
+calibrationCalc <- function(TFdata, target, internal.standard, weighting, colname.compound = "Compound", Exclude.STD = FALSE){
   
   data <- responseArea(TFdata, target = target, internal.standard = internal.standard, weighting = weighting, 
                        colname.compound = colname.compound)
 
   cal.data <- na.omit(subset(data[,c("Level.x", "response.area")], data$Sample.Type.x == "Cal Std"))
   cal.data$weights <- weighting(cal.levels = cal.data$Level.x, calibration = weighting)
+  if (Exclude.STD == TRUE){
+    cal.data <- cal.data[cal.data$Excluded.x=="False",]  # I added this to exclude calib std which were toggled with TF
+  }
   
   if(nrow(cal.data) == 0){
  #    stop("no calibration possible")
