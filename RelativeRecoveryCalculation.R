@@ -1,4 +1,45 @@
 
+## From Karin:
+
+#' function selectISTDs() will select all ISTDs which elute within the defined RT window
+#'
+#' @param TFdata TraceFinder quantification file, saved as a data.frame
+#' @param target name of target compound, needs to be same as name in TFdata
+#' @param RT_window ISTDs are selected which elute +/- RT_window (min)
+#'
+selectISTDs <- function(TFdata, target, RT_window = 1.5){
+  ISTDs  <- unique(subset(TFdata, TFdata$Type == "Internal Standard", select=c("Compound", "RT")))
+  ISTDs$RT <- as.numeric(ISTDs$RT)
+  target_RT <- as.numeric(unique(TFdata[TFdata$Compound == target, c("RT")]))
+  ISTDs  <- subset(ISTDs, (ISTDs$RT< target_RT + RT_window & ISTDs$RT>target_RT - RT_window ))
+  return(ISTDs$Compound)
+}
+
+
+#' function selects ISTDs for which rel. standard deviation < relSD.max and mean.min < mean < mean.max
+#'
+#' @param recoveries output of function recoveryCalc()
+#' @param relSD.max
+#' @param mean.min  
+#' @param mean.max
+#' @param sample.code
+#'
+selectBestISTDs <- function(recoveries, relSD.max = 25, mean.min = 80, mean.max = 120, recovery.code = recovery.code){
+  
+  #calculate mean & rel. standard deviation
+  recoveries$mean <- round(apply(recoveries[, recovery.code], 1, mean, na.rm=TRUE ), 1)
+  recoveries$relSD <- apply(recoveries[,  recovery.code], 1, sd, na.rm=TRUE )
+  recoveries$relSD <- round(recoveries$relSD / recoveries$mean * 100, 1)
+  recoveries <- recoveries[is.finite(recoveries$mean), ]    # delete rows, where all recoveries are NA
+  
+  # select best ISTDs according to criteria and order them based on relSD
+  recoveries <- recoveries[recoveries$relSD < relSD.max & recoveries$mean > mean.min & recoveries$mean < mean.max, ]
+  recoveries <- recoveries[ order(recoveries$relSD, decreasing = F), ]   # order ISTDs
+  return(recoveries)
+}
+
+
+## From Jen:
 
 ### finding the best internal standard to calculate relative recovery with
 
