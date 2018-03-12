@@ -1,5 +1,5 @@
 
-## From Karin:
+### Karin: 
 
 #' function selectISTDs() will select all ISTDs which elute within the defined RT window
 #'
@@ -39,8 +39,7 @@ selectBestISTDs <- function(recoveries, relSD.max = 25, mean.min = 80, mean.max 
 }
 
 
-## From Jen:
-
+##@ Jen:
 ### finding the best internal standard to calculate relative recovery with
 
 ### data needed for this  is a Tracefinder data file which includes:
@@ -49,10 +48,11 @@ selectBestISTDs <- function(recoveries, relSD.max = 25, mean.min = 80, mean.max 
 
 library(reshape)
 
+
 #' weighting function for the linear regression
 #'
 #' @param cal.levels 
-#' @param calibration which type of weighting is desired? options are X, 1/X, and 1/X^2
+#' @param calibration which type of weighting is desired? options are X, 1/X, and 1/X2
 #'
 #' @return a vector is returned with the cal.levels adjusted by the desired weighting factor
 #' @export
@@ -101,7 +101,7 @@ responseArea <- function(TFdata, target, internal.standard, weighting, colname.c
   
   data <- merge(target.area, istd.area, by = "Filename")
   data$response.area <- as.numeric(as.character(data$Area.x)) / as.numeric(as.character(data$Area.y))
-
+  
   return(data)
   
 }
@@ -114,7 +114,6 @@ responseArea <- function(TFdata, target, internal.standard, weighting, colname.c
 #' @param internal.standard name of internal standard compound, needs to be same as name in TFdata
 #' @param weighting type of weighting desired, options are X, 1/X, and 1/X^2
 #' @param colname.compound name of the column in TFdata with compound names
-#' @param Exclude.STD Exclude standards which were toggled in TraceFinder. Default is FALSE
 #'
 #' @return output is an lm object, based on the calibration levels and the response area, using the specified weights. if 
 #' no calilbration data is input, lm = "NA"
@@ -126,19 +125,19 @@ calibrationCalc <- function(TFdata, target, internal.standard, weighting, colnam
   
   data <- responseArea(TFdata, target = target, internal.standard = internal.standard, weighting = weighting, 
                        colname.compound = colname.compound)
-
-  cal.data <- na.omit(subset(data[,c("Level.x", "response.area")], data$Sample.Type.x == "Cal Std"))
+  
+  cal.data <- na.omit(subset(data[ ,c("Level.x", "response.area", "Excluded.x")], data$Sample.Type.x == "Cal Std"))
   cal.data$weights <- weighting(cal.levels = cal.data$Level.x, calibration = weighting)
   if (Exclude.STD == TRUE){
     cal.data <- cal.data[cal.data$Excluded.x=="False",]  # I added this to exclude calib std which were toggled with TF
   }
-  
   if(nrow(cal.data) == 0){
- #    stop("no calibration possible")
-     return(lm <-"NA")
+    #    stop("no calibration possible")
+    return(lm <-"NA")
   }else{
-     lm <- lm(Level.x ~ response.area, data = cal.data, weights = cal.data$weights)
-     return(lm)
+    #lm <- lm(Level.x ~ response.area, data = cal.data, weights = cal.data$weights) #here response ratio is weighted
+    lm <- lm(response.area ~ Level.x, data = cal.data, weights = cal.data$weights)  #here the concentration is weighted (levels) 
+    return(lm)
   }
 }
 
@@ -157,30 +156,30 @@ calibrationCalc <- function(TFdata, target, internal.standard, weighting, colnam
 #'
 #' @examples
 #' 
-predictConc <- function(TFdata, target, internal.standard, weighting, colname.compound){
+predictConc <- function(TFdata, target, internal.standard, weighting, colname.compound, Exclude.STD = FALSE){
   
   if(is.na(TFdata)){
- #   stop("no calibration was possible")
+    #   stop("no calibration was possible")
     return(TFdata)
   }
   
   data <- responseArea(TFdata, target = target, internal.standard = internal.standard, weighting = weighting, 
                        colname.compound = colname.compound)
   
-
- lm <- calibrationCalc(TFdata, target = target, internal.standard = internal.standard, weighting = weighting, 
-                       colname.compound = colname.compound)
+  
+  lm <- calibrationCalc(TFdata, target = target, internal.standard = internal.standard, weighting = weighting, 
+                        colname.compound = colname.compound, Exclude.STD = Exclude.STD)
   
   if(lm=="NA"){
     return(TFdata)
   }else{
-    data$predictConc <- as.numeric(predict(lm, newdata = data.frame(response.area = as.numeric(as.character(data$response.area)))))
-    #data <- data[, c("Filename", "Sample.Name.x", "Compound.x", "RT.x", "Compound.y", "RT.y", "response.area", 
-    #                 "predictConc" )] # I added this to make output smaller
+    #data$predictConc <- as.numeric(predict(lm, newdata = data.frame(response.area = as.numeric(as.character(data$response.area)))))
+    data$predictConc <- (data$response.area - lm$coefficients[1])/lm$coefficients[2]    
+    
     data$R2 <- summary(lm)$r.squared
     return(data)
   }
-
+  
 }
 
 #' Predicted concentrations are used to calculate relative recovery
@@ -195,8 +194,7 @@ predictConc <- function(TFdata, target, internal.standard, weighting, colname.co
 #' this will need to include '.x' or '.y' at the end
 #' @param acc.factor if difference in concentration of spiked and unspiked samples is too small, rel. recovery should
 #' not be calculated (measurement errors are too large...)
-#' @param replicates were replicates measured for the spiked samples? Default is FALSE
-
+#'
 #' @return relative recovery, reported as a percentage
 #' @export
 #'
@@ -217,20 +215,20 @@ recoveryCalc <- function(predicted.data, sample.code, recovery.code, standard.co
       recovery <- grep(pattern = recovery.code, x = predicted.data$Sample.Name.x)
       samples <- grep(pattern = sample.code, x = predicted.data$Sample.Name.x)
       
-      unspike.mean <- as.data.frame(cast(data = predicted.data[c(setdiff(samples, recovery)),], 
-                                         formula = as.formula(paste("Sample.Name.x ~", colname.compound)), 
-                                         function(x) mean(na.omit(as.numeric(as.character(x)))),
-                                         value = 'predictConc'))
-      if(is.nan(unspike.mean[, 2])){   #Karin: I added this
-        unspike.mean[which(is.nan(unspike.mean[, 2])), 2] <- 0
-      }
-      
-      spike.mean <- as.data.frame(cast(data = predicted.data[c(intersect(samples, recovery)),], 
+      spike.mean <- as.data.frame(cast(data = predicted.data[c(setdiff(recovery, samples)),], 
                                        formula = as.formula(paste("Sample.Name.x ~", colname.compound)), 
                                        function(x) mean(na.omit(as.numeric(as.character(x)))),
                                        value = 'predictConc'))
-      if(is.nan(spike.mean[, 2])){   #Karin: I added this, otherwise the if condition with acc.factor fails if spike.mean = NaN
+      if(is.nan(spike.mean[, 2])){   #Karin: I added this
         spike.mean[which(is.nan(spike.mean[, 2])), 2] <- 0
+      }
+      
+      unspike.mean <- as.data.frame(cast(data = predicted.data[c(intersect(recovery, samples)),], 
+                                         formula = as.formula(paste("Sample.Name.x ~", colname.compound)), 
+                                         function(x) mean(na.omit(as.numeric(as.character(x)))),
+                                         value = 'predictConc'))
+      if(is.nan(unspike.mean[, 2])){   #Karin: I added this, otherwise the if condition with acc.factor fails if spike.mean = NaN
+        unspike.mean[which(is.nan(unspike.mean[, 2])), 2] <- 0
       }
     }else{ # Karin: I added this
       unspike.mean <- predicted.data[which(predicted.data$Sample.Name.x==sample.code), c("predictConc")]
@@ -259,7 +257,8 @@ recoveryCalc <- function(predicted.data, sample.code, recovery.code, standard.co
     }
     
     if(standard.conc == "theoretical"){
-      if (unspike.mean[,2] > (spike.mean[,2] - unspike.mean[,2])*acc.factor){  #Karin: I added this, but this fails if spike.mean = NaN
+      if (mean(unspike.mean[,2],na.rm = TRUE) > (mean(spike.mean[,2], na.rm = TRUE) - mean(unspike.mean[,2],na.rm = TRUE))*acc.factor){
+        #if (unspike.mean[,2] > (spike.mean[,2] - unspike.mean[,2])*acc.factor){  #Karin: I added this, but this fails if spike.mean = NaN
         relRec <- NA
       } else {
         relRec <- ((mean(spike.mean[,2], na.rm = TRUE) - mean(unspike.mean[,2],na.rm = TRUE))/as.numeric(spike.level))*100
@@ -273,4 +272,3 @@ recoveryCalc <- function(predicted.data, sample.code, recovery.code, standard.co
   }
   
 }
-
